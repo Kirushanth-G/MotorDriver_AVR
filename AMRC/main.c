@@ -1,10 +1,3 @@
-/*
- * AMRC.c
- *
- * Created: 06/07/2024 20:13:50
- * Author : Kiru
- */ 
-
 #define F_CPU 16000000UL  // Define CPU clock speed
 #include <avr/io.h>
 #include <avr/interrupt.h>
@@ -35,17 +28,51 @@ unsigned char uart_receive(void) {
 	return UDR0;
 }
 
+void uart_print(char* str) {
+	while (*str) {
+		while (!(UCSR0A & (1<<UDRE0)));
+		UDR0 = *str++;
+	}
+}
+
+void uart_print_int(int value) {
+	char buffer[10];
+	itoa(value, buffer, 10);
+	uart_print(buffer);
+}
+
+void parse_and_set_speeds(char* input) {
+	// Parse the input string for two integers
+	int speed1, speed2;
+	if (sscanf(input, "%d %d", &speed1, &speed2) == 2) {
+		// Print the received PWM values
+		uart_print("Received PWM values: ");
+		uart_print_int(speed1);
+		uart_print(" ");
+		uart_print_int(speed2);
+		uart_print("\r\n");
+
+		// Set motor speeds
+		set_motor_speed(1, speed1);
+		set_motor_speed(2, speed2);
+		} else {
+		uart_print("Error: Invalid input format.\r\n");
+	}
+}
+
 void pwm_init() {
 	// Set PWM pins as output
 	DDRD |= (1<<MOTOR1_PWM) | (1<<MOTOR2_PWM);
 	DDRD |= (1<<MOTOR1_DIR) | (1<<MOTOR2_DIR);
 
-	// Set Fast PWM mode, non-inverted
+	// Set Fast PWM mode, non-inverted for Timer0
 	TCCR0A = (1<<WGM00) | (1<<WGM01) | (1<<COM0A1) | (1<<COM0B1);
-	TIMSK0 = (1<<TOIE0);
-	
-	// Set prescaler to 64 and start PWM
+	// Set prescaler to 64 and start PWM for Timer0
 	TCCR0B = (1<<CS01) | (1<<CS00);
+
+	// Set Fast PWM mode, non-inverted for Timer1
+	TCCR1A = (1<<WGM10) | (1<<COM1A1) | (1<<COM1B1);
+	TCCR1B = (1<<WGM12) | (1<<CS11) | (1<<CS10); // Prescaler 64
 }
 
 void set_motor_speed(int motor, int speed) {
@@ -68,49 +95,25 @@ void set_motor_speed(int motor, int speed) {
 	}
 }
 
-/*int main(void) {
-	char buffer[20];
-	int index = 0;
-	char c;
+int main(void){
+	char input[20];
+	int inputIndex = 0;
+	char receivedChar;
 
-	// Initialize UART and PWM
-	uart_init(103); // For 9600 baud with 16MHz clock
-	pwm_init();
+	uart_init(103); // Initialize UART with baud rate 9600
+	pwm_init(); // Initialize PWM
 
-	// Enable global interrupts
-	sei();
+	sei(); // Enable global interrupts
 
-	while (1) {
-		// Read PWM values from the serial input
-		c = uart_receive();
-		if (c == '\n' || c == '\r') {
-			buffer[index] = '\0';
-
-			// Parse the received PWM values
-			char* ptr = strtok(buffer, " ");
-			if (ptr != NULL) pwm1 = atoi(ptr);
-			ptr = strtok(NULL, " ");
-			if (ptr != NULL) pwm2 = atoi(ptr);
-
-			// Set motor speeds
-			set_motor_speed(1, pwm1);
-			set_motor_speed(2, pwm2);
-
-			// Reset the index for the next read
-			index = 0;
+	while(1){
+		// Receive characters and build the input string
+		receivedChar = uart_receive();
+		if (receivedChar == '\n' || receivedChar == '\r') {
+			input[inputIndex] = '\0'; // Null-terminate the string
+			parse_and_set_speeds(input); // Parse and set speeds
+			inputIndex = 0; // Reset input index for next input
 			} else {
-			if (index < sizeof(buffer) - 1) {
-				buffer[index++] = c;
-			}
+			input[inputIndex++] = receivedChar; // Add char to input string
 		}
 	}
-}*/
-int main(void){
-	pwm_init();
-	sei();
-	while(1){
-		set_motor_speed(1, 100);
-		set_motor_speed(2, 100);
-	}
 }
-
